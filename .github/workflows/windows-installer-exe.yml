@@ -41,16 +41,13 @@ jobs:
       - name: Uninstall
         run: |
           $ErrorActionPreference = 'Stop'
-          $app = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\Windows\Start Menu\Programs\Ramus" -Filter *.lnk |
-            Where-Object { $_.Name -match 'Ramus' } | Select-Object -First 1
-          if ($app) {
-            $target = (New-Object -ComObject WScript.Shell).CreateShortcut($app.FullName).TargetPath
-            $uninst = Join-Path (Split-Path $target) 'uninstall.exe' 
-            if (Test-Path $uninst) {
-              $p = Start-Process $uninst -ArgumentList '/q' -Wait -PassThru
-              Write-Host "Uninstall exit: $($p.ExitCode)"
-            }
-          }
+          $uninst = Join-Path $env:LOCALAPPDATA 'Ramus\uninstall.exe'
+          if (-not (Test-Path $uninst)) { throw "not found: $uninst" }
+          $p = Start-Process $uninst -ArgumentList '/q' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "uninstall exited with code $($p.ExitCode)" }
+          $dir = Join-Path $env:LOCALAPPDATA 'Ramus'
+          if (Test-Path $dir) { throw "the directory survived the uninstall: $dir" }
+          Write-Host 'Uninstalled cleanly'
 
       - uses: actions/upload-artifact@v4
         with:
