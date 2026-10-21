@@ -41,10 +41,19 @@ jobs:
       - name: Uninstall
         run: |
           $ErrorActionPreference = 'Stop'
-          $uninst = Join-Path $env:LOCALAPPDATA 'Ramus\uninstall.exe'
-          if (-not (Test-Path $uninst)) { throw "not found: $uninst" }
-          $p = Start-Process $uninst -ArgumentList '/q' -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "uninstall exited with code $($p.ExitCode)" }
+          $wi = New-Object -ComObject WindowsInstaller.Installer
+          $code = $null
+          foreach ($c in $wi.GetType().InvokeMember('Products', 'GetProperty', $null, $wi, $null)) {
+              try {
+                  $n = $wi.GetType().InvokeMember('ProductInfo', 'GetProperty',
+                      $null, $wi, @($c, 'ProductName'))
+              } catch { continue }
+              if ($n -eq 'Ramus') { $code = $c; break }
+          }
+          if (-not $code) { throw 'Windows Installer does not know a product named Ramus' }
+          Write-Host "ProductCode: $code"
+          $p = Start-Process msiexec -ArgumentList @('/x', $code, '/qn') -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec /x exited with code $($p.ExitCode)" }
           $dir = Join-Path $env:LOCALAPPDATA 'Ramus'
           if (Test-Path $dir) { throw "the directory survived the uninstall: $dir" }
           Write-Host 'Uninstalled cleanly'
