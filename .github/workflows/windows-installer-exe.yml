@@ -1,0 +1,59 @@
+name: Windows EXE installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install WiX Toolset 3
+        run: |
+          choco install wixtoolset --no-progress -y
+          "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin" |
+            Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Build the EXE installer
+        run: .\packaging\windows\build-installer.ps1 -Jdk "$env:JAVA_HOME" -Type exe
+
+      - name: Smoke-test the EXE installer
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem dest\windows\*.exe | Select-Object -First 1
+          Write-Host "Installing $($exe.FullName)"
+          $p = Start-Process $exe.FullName -ArgumentList '/qn' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited with code $($p.ExitCode)" }
+          $installed = Join-Path $env:LOCALAPPDATA 'Ramus\Ramus.exe'
+          if (-not (Test-Path $installed)) { throw "not found: $installed" }
+          Write-Host "Installed: $installed"
+
+      - name: Uninstall
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\Windows\Start Menu\Programs\Ramus" -Filter *.lnk |
+            Where-Object { $_.Name -match 'Ramus' } | Select-Object -First 1
+          if ($app) {
+            $target = (New-Object -ComObject WScript.Shell).CreateShortcut($app.FullName).TargetPath
+            $uninst = Join-Path (Split-Path $target) 'uninstall.exe' 
+            if (Test-Path $uninst) {
+              $p = Start-Process $uninst -ArgumentList '/q' -Wait -PassThru
+              Write-Host "Uninstall exit: $($p.ExitCode)"
+            }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ramus-windows-exe
+          path: dest/windows/*.exe
+          if-no-files-found: error
